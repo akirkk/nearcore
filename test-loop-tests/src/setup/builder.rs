@@ -13,10 +13,7 @@ use near_chain_configs::test_genesis::{
     TestEpochConfigBuilder, TestGenesisBuilder, ValidatorsSpec,
 };
 use near_chain_configs::test_utils::TestClientConfigParams;
-use near_chain_configs::{
-    ClientConfig, DumpConfig, ExternalStorageConfig, ExternalStorageLocation, Genesis,
-    StateSyncConfig, SyncConfig, TrackedShardsConfig,
-};
+use near_chain_configs::{ClientConfig, DumpConfig, Genesis, SyncConfig, TrackedShardsConfig};
 use near_jsonrpc::client::JsonRpcClient;
 use near_jsonrpc::sharded_rpc::ShardedRpcNode;
 use near_parameters::RuntimeConfigStore;
@@ -590,9 +587,7 @@ impl<'a> NodeStateBuilder<'a> {
 
         if !archive {
             client_config.state_sync_enabled = true;
-            // Testloop does not handle decentralized state sync network messages.
-            // Instead, parts are dumped into a tempdir that mocks a centralized state sync bucket.
-            client_config.state_sync = default_testloop_state_sync_config(&self.tempdir_path);
+            client_config.state_sync.sync = SyncConfig::Peers;
         }
 
         if let Some(config_modifier) = &self.config_modifier {
@@ -815,29 +810,4 @@ enum WarmupMode {
     Skip,
     /// Do not auto-warmup, but the caller is expected to call `warmup()` manually.
     Manual,
-}
-
-fn default_testloop_state_sync_config(tempdir: &PathBuf) -> StateSyncConfig {
-    let external_storage_location =
-        ExternalStorageLocation::Filesystem { root_dir: tempdir.join("state_sync") };
-    StateSyncConfig {
-        dump: Some(DumpConfig {
-            iteration_delay: Some(Duration::seconds(1)),
-            location: external_storage_location.clone(),
-            credentials_file: None,
-            restart_dump_for_shards: None,
-        }),
-        sync: SyncConfig::ExternalStorage(ExternalStorageConfig {
-            location: external_storage_location,
-            num_concurrent_requests: 1,
-            num_concurrent_requests_during_catchup: 1,
-            // We go straight to storage here because the network layer basically
-            // doesn't exist in testloop. We could mock a bunch of stuff to make
-            // the clients transfer state parts "peer to peer" but we wouldn't really
-            // gain anything over having them dump parts to a tempdir.
-            external_storage_fallback_threshold: 0,
-        }),
-        concurrency: Default::default(),
-        parts_compression_lvl: Default::default(),
-    }
 }
