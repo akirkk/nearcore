@@ -495,7 +495,8 @@ impl ProtocolFeature {
             | ProtocolFeature::InstantDeleteAccount => 83,
             ProtocolFeature::Wasmtime => 84,
             ProtocolFeature::FixDelegateActionDepositWithFunctionCallError
-            | ProtocolFeature::ContinuousEpochSync => 85,
+            | ProtocolFeature::ContinuousEpochSync
+            | ProtocolFeature::DynamicResharding => 85,
 
             // Nightly features:
             ProtocolFeature::FixContractLoadingCost => 129,
@@ -503,7 +504,6 @@ impl ProtocolFeature {
             // that always enables this for mocknet (see config_mocknet function).
             ProtocolFeature::ShuffleShardAssignments => 143,
             ProtocolFeature::GasKeys => 149,
-            ProtocolFeature::DynamicResharding => 150,
             ProtocolFeature::StrictNonce => 151,
             ProtocolFeature::EarlyKickout => 152,
 
