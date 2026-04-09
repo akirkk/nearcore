@@ -64,6 +64,19 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::instrument;
 use trie_update_wrapper::TrieUpdateWitnessSizeWrapper;
 
+/// Dedicated thread pool for contract compilation, so it doesn't block the
+/// global rayon pool used for chunk application and witness validation.
+fn compilation_pool() -> &'static rayon::ThreadPool {
+    static POOL: std::sync::OnceLock<rayon::ThreadPool> = std::sync::OnceLock::new();
+    POOL.get_or_init(|| {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(std::cmp::max(rayon::current_num_threads() / 2, 1))
+            .thread_name(|index| format!("compile-contracts-{index}"))
+            .build()
+            .expect("failed to build compilation thread pool")
+    })
+}
+
 pub mod errors;
 mod metrics;
 mod signer_overlay;
@@ -1552,19 +1565,12 @@ impl RuntimeAdapter for NightshadeRuntime {
         let runtime_config = self.runtime_config_store.get_config(protocol_version);
         let compiled_contract_cache: Option<Box<dyn ContractRuntimeCache>> =
             Some(Box::new(self.compiled_contract_cache.handle()));
-        // Execute precompile_contract in parallel but prevent it from using more than half of all
-        // threads so that node will still function normally.
-        rayon::scope(|scope| {
-            let (slot_sender, slot_receiver) = std::sync::mpsc::channel();
-            // Use up-to half of the threads for the compilation.
-            let max_threads = std::cmp::max(rayon::current_num_threads() / 2, 1);
-            for _ in 0..max_threads {
-                slot_sender.send(()).expect("both sender and receiver are owned here");
-            }
+        // Execute precompile_contract in parallel on a dedicated thread pool
+        // to avoid sharing the global rayon pool used for chunk application
+        // and witness validation.
+        compilation_pool().scope(|scope| {
             for code in contract_codes {
-                slot_receiver.recv().expect("could not receive a slot to compile contract");
                 let contract_cache = compiled_contract_cache.as_deref();
-                let slot_sender = slot_sender.clone();
                 scope.spawn(move |_| {
                     precompile_contract(
                         &code,
@@ -1572,9 +1578,6 @@ impl RuntimeAdapter for NightshadeRuntime {
                         contract_cache,
                     )
                     .ok();
-                    // If this fails, it just means there won't be any more attempts to recv the
-                    // slots
-                    let _ = slot_sender.send(());
                 });
             }
         });
