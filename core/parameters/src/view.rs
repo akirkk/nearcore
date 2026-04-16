@@ -239,6 +239,8 @@ pub struct VMConfigView {
     pub gas_key_host_fns: bool,
     /// See [VMConfig::one_yocto_on_promise](crate::vm::Config::one_yocto_on_promise).
     pub one_yocto_on_promise: bool,
+    /// See [VMConfig::chain_id_host_fn](crate::vm::Config::chain_id_host_fn).
+    pub chain_id_host_fn: bool,
 
     /// See [VMConfig::storage_get_mode](crate::vm::Config::storage_get_mode).
     pub storage_get_mode: crate::vm::StorageGetMode,
@@ -279,6 +281,7 @@ impl From<crate::vm::Config> for VMConfigView {
             deterministic_account_ids: config.deterministic_account_ids,
             gas_key_host_fns: config.gas_key_host_fns,
             one_yocto_on_promise: config.one_yocto_on_promise,
+            chain_id_host_fn: config.chain_id_host_fn,
         }
     }
 }
@@ -303,6 +306,7 @@ impl From<VMConfigView> for crate::vm::Config {
             deterministic_account_ids: view.deterministic_account_ids,
             gas_key_host_fns: view.gas_key_host_fns,
             one_yocto_on_promise: view.one_yocto_on_promise,
+            chain_id_host_fn: view.chain_id_host_fn,
         }
     }
 }

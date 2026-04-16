@@ -30,6 +30,7 @@ pub(crate) fn test_builder() -> TestBuilder {
         random_seed: vec![0, 1, 2],
         view_config: None,
         output_data_receivers: vec![],
+        chain_id: "testnet".to_string(),
     };
     let mut skip = HashSet::new();
     for kind in [VMKind::NearVm, VMKind::Wasmtime] {

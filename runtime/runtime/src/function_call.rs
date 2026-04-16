@@ -286,6 +286,7 @@ pub(crate) fn execute_function_call(
         random_seed,
         view_config,
         output_data_receivers,
+        chain_id: runtime_ext.chain_id(),
     };
 
     near_vm_runner::reset_metrics();

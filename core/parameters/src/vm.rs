@@ -213,6 +213,9 @@ pub struct Config {
     /// call without requiring the calling contract to have sufficient balance.
     pub one_yocto_on_promise: bool,
 
+    /// Whether to enable the chain_id host function (NEP-638).
+    pub chain_id_host_fn: bool,
+
     /// Describes limits for VM and Runtime.
     pub limit_config: LimitConfig,
 }

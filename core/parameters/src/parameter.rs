@@ -255,6 +255,9 @@ pub enum Parameter {
     // Flag to enable gas key host functions
     GasKeyHostFns,
 
+    // Flag to enable chain_id host function (NEP-638)
+    ChainIdHostFn,
+
     // Flag to allow 1 yoctoNEAR on promise function calls without balance
     OneYoctoOnPromise,
 }

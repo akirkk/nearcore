@@ -385,6 +385,10 @@ pub enum ProtocolFeature {
     /// during header sync and block processing. Foundation for early chunk producer
     /// kickout without epoch manager recomputation.
     EarlyKickout,
+    /// NEP-638: chain_id host function.
+    /// Enables smart contracts to retrieve the chain identifier via a host function.
+    /// NEP: https://github.com/near/NEPs/pull/638
+    ChainIdHostFunction,
 }
 
 impl ProtocolFeature {
@@ -495,7 +499,8 @@ impl ProtocolFeature {
             | ProtocolFeature::InstantDeleteAccount => 83,
             ProtocolFeature::Wasmtime => 84,
             ProtocolFeature::FixDelegateActionDepositWithFunctionCallError
-            | ProtocolFeature::ContinuousEpochSync => 85,
+            | ProtocolFeature::ContinuousEpochSync
+            | ProtocolFeature::ChainIdHostFunction => 85,
 
             // Nightly features:
             ProtocolFeature::FixContractLoadingCost => 129,

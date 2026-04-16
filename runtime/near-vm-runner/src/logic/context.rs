@@ -62,6 +62,8 @@ pub struct VMContext {
     /// How many `DataReceipt`'s should receive this execution result. This should be empty if
     /// this function call is a part of a batch and it is not the last action.
     pub output_data_receivers: Vec<AccountId>,
+    /// The chain ID of the current chain.
+    pub chain_id: String,
 }
 
 impl VMContext {
