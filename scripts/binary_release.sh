@@ -106,6 +106,9 @@ function upload_binary {
   upload_s3 "target/release/${binary}" "${os_and_arch}/${branch}/${commit}/${folder}/${binary}"
 }
 
+# Force rebuild of jemalloc with profiling support (temporary).
+run_cmd cargo clean -p tikv-jemalloc-sys
+
 run_cmd make $release_type
 
 if [ "$upload_action" = "upload-release" ]
