@@ -19,7 +19,7 @@ class DynamicResharding(TestSetup):
         self.has_state_dumper = False
         self.genesis_protocol_version = 84
         self.has_archival = True
-        self.regions = "europe-west4,asia-east1,us-west1"
+        self.regions = "europe-west4,asia-east1,us-east1"
         self.neard_binary_url = "https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore/Linux-x86_64/wiezzel/dynamic-resharding-test-v2/d47754e9888098aca99562c5ee161a8e70682a40/release/neard"
 
     def amend_configs_before_test_start(self):
