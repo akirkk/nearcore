@@ -6,6 +6,7 @@ pub mod cli;
 mod commands;
 mod congestion_control;
 mod contract_accounts;
+mod dump_contracts;
 mod epoch_info;
 mod latest_witnesses;
 pub mod progress_reporter;

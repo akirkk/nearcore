@@ -1,6 +1,7 @@
 use crate::commands::*;
 use crate::congestion_control::CongestionControlCmd;
 use crate::contract_accounts::ContractAccountFilter;
+use crate::dump_contracts::DumpContractsCmd;
 use crate::latest_witnesses::StateWitnessCmd;
 use crate::replay_headers::replay_headers;
 use crate::rocksdb_stats::get_rocksdb_stats;
@@ -69,6 +70,10 @@ pub enum StateViewerSubCommand {
     /// Dump deployed contract code of given account to wasm file.
     #[clap(alias = "dump_code")]
     DumpCode(DumpCodeCmd),
+    /// Dump every deployed wasm contract on this node into a directory, deduped by code hash.
+    /// Scans flat storage, so safe to run in `--readonly` mode against a live RPC node.
+    #[clap(alias = "dump_contracts")]
+    DumpContracts(DumpContractsCmd),
     /// Generate a genesis file from the current state of the DB.
     #[clap(alias = "dump_state")]
     DumpState(DumpStateCmd),
@@ -181,6 +186,7 @@ impl StateViewerSubCommand {
             }
             StateViewerSubCommand::DumpAccountStorage(cmd) => cmd.run(home_dir, near_config, store),
             StateViewerSubCommand::DumpCode(cmd) => cmd.run(home_dir, near_config, store),
+            StateViewerSubCommand::DumpContracts(cmd) => cmd.run(home_dir, near_config, store),
             StateViewerSubCommand::DumpState(cmd) => cmd.run(home_dir, near_config, store),
             StateViewerSubCommand::DumpStateRedis(cmd) => cmd.run(home_dir, near_config, store),
             StateViewerSubCommand::DumpTx(cmd) => cmd.run(home_dir, near_config, store),
