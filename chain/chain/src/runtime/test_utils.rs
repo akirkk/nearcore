@@ -85,6 +85,7 @@ impl NightshadeRuntime {
                 "contract.cache",
                 1,
                 None,
+                near_vm_runner::UNBOUNDED_DISK_CACHE_BYTES,
             )
             .expect("filesystem contract cache")
             .handle(),
