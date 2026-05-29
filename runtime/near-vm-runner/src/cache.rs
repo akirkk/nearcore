@@ -282,10 +282,15 @@ struct FilesystemContractRuntimeCacheState {
 
 #[cfg(not(windows))]
 impl FilesystemContractRuntimeCache {
+    /// `max_disk_cache_bytes` is the maximum total size of compiled-contract
+    /// files kept on disk; least-recently-used files are evicted as new entries
+    /// arrive. Pass `u64::MAX` for effectively no eviction (tests, the params
+    /// estimator).
     pub fn new<StorePath, ContractCachePath>(
         home_dir: &std::path::Path,
         store_path: Option<&StorePath>,
         contract_cache_path: &ContractCachePath,
+        max_disk_cache_bytes: u64,
     ) -> std::io::Result<Self>
     where
         StorePath: AsRef<std::path::Path> + ?Sized,
@@ -297,7 +302,7 @@ impl FilesystemContractRuntimeCache {
             contract_cache_path,
             0,
             None,
-            UNBOUNDED_DISK_CACHE_BYTES,
+            max_disk_cache_bytes,
         )
     }
 
@@ -387,25 +392,17 @@ impl FilesystemContractRuntimeCache {
     }
 
     pub fn test() -> std::io::Result<Self> {
-        let tempdir = tempfile::TempDir::new()?;
-        let mut cache = Self::new(tempdir.path(), None::<&str>, "contract.cache")?;
-        Arc::get_mut(&mut cache.state).unwrap().test_temp_dir = Some(tempdir);
-        Ok(cache)
+        // Tests that don't exercise eviction want no effective limit.
+        Self::test_with_disk_cache_bytes(u64::MAX)
     }
 
-    /// Like [`Self::test`], but with on-disk eviction enabled at the given
-    /// byte limit. Tests for the eviction feature use this; everything else
-    /// stays on [`Self::test`].
+    /// Like [`Self::test`], but with the on-disk eviction limit set explicitly.
+    /// Tests for the eviction feature use this; everything else stays on
+    /// [`Self::test`].
     pub fn test_with_disk_cache_bytes(max_disk_cache_bytes: u64) -> std::io::Result<Self> {
         let tempdir = tempfile::TempDir::new()?;
-        let mut cache = Self::with_memory_cache(
-            tempdir.path(),
-            None::<&str>,
-            "contract.cache",
-            0,
-            None,
-            max_disk_cache_bytes,
-        )?;
+        let mut cache =
+            Self::new(tempdir.path(), None::<&str>, "contract.cache", max_disk_cache_bytes)?;
         Arc::get_mut(&mut cache.state).unwrap().test_temp_dir = Some(tempdir);
         Ok(cache)
     }
@@ -428,19 +425,6 @@ const CODE_TAG: u8 = 0b10010101;
 /// plus 8 bytes of little-endian `wasm_bytes`.
 #[cfg(not(windows))]
 const PUT_TRAILER_BYTES: u64 = 1 + 8;
-
-/// Pass to [`FilesystemContractRuntimeCache::with_memory_cache`] (or
-/// [`FilesystemContractRuntimeCache::new`]) when the caller doesn't want any
-/// effective on-disk eviction — unit tests, the params estimator, the
-/// quick-and-dirty `new()` constructor. The limit is so large no realistic
-/// working set ever reaches it, so behavior is indistinguishable from a cache
-/// with no eviction at all.
-///
-/// One bit below `u64::MAX / 2` because [`LruWeightedCache`] asserts
-/// `max_weight < u64::MAX / 2` to keep its transient `current_weight + weight`
-/// arithmetic from overflowing.
-#[cfg(not(windows))]
-pub const UNBOUNDED_DISK_CACHE_BYTES: u64 = u64::MAX / 2 - 1;
 
 /// Total bytes [`FilesystemContractRuntimeCache::put`] writes for `value`,
 /// including the trailing tag and the `wasm_bytes` length suffix. Used to
@@ -790,10 +774,11 @@ impl<K: std::hash::Hash + Eq, V> LruWeightedCache<K, V> {
     }
 
     fn with_lru(max_weight: u64, cache: lru::LruCache<K, LruWeightedCacheEntry<V>>) -> Self {
-        assert!(
-            max_weight < u64::MAX / 2,
-            "cache weight must be capped at u64::MAX / 2 to avoid overflows"
-        );
+        // Clamp rather than assert: the limit can come from operator config or
+        // from a caller passing `u64::MAX` to mean "effectively unbounded", and
+        // neither should crash the node. The cap keeps the transient
+        // `current_weight + weight` arithmetic in `insert` from overflowing.
+        let max_weight = max_weight.min(u64::MAX / 2 - 1);
         Self { current_weight: 0, max_weight, cache }
     }
 

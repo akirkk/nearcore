@@ -85,7 +85,8 @@ impl NightshadeRuntime {
                 "contract.cache",
                 1,
                 None,
-                near_vm_runner::UNBOUNDED_DISK_CACHE_BYTES,
+                // Test runtime never evicts.
+                u64::MAX,
             )
             .expect("filesystem contract cache")
             .handle(),
