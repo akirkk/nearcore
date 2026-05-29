@@ -697,7 +697,7 @@ impl WasmtimeVM {
         let mut is_cache_hit = true;
         let mut is_memory_hit = true;
         let key = get_contract_cache_key(contract.hash(), &self.config, self.vm_hash());
-        cache.note_access(&key);
+        cache.touch(&key);
         let (wasm_bytes, pre_result) = cache.memory_cache().try_lookup(
             key,
             || {

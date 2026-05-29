@@ -398,9 +398,7 @@ pub struct Config {
     ///
     /// Each loaded contract will increase the baseline memory use of the node appreciably.
     pub max_loaded_contracts: usize,
-    /// Maximum total size of the on-disk compiled-contract cache. When the
-    /// cache exceeds this, least-recently-used entries are deleted as new
-    /// entries arrive.
+    /// Maximum allowed total size of the on-disk compiled-contract cache entries.
     pub contract_cache_max_size: ByteSize,
     /// Save observed instances of ChunkStateWitness to the database in DBCol::LatestChunkStateWitnesses.
     /// Saving the latest witnesses is useful for analysis and debugging.

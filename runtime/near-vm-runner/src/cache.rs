@@ -129,15 +129,9 @@ pub trait ContractRuntimeCache: Send + Sync {
     fn has(&self, key: &CryptoHash) -> std::io::Result<bool> {
         self.get(key).map(|entry| entry.is_some())
     }
-    /// Notify the cache that `key` is about to be looked up — typically called
-    /// from a VM runner just before `memory_cache().try_lookup(key, ...)`.
-    ///
-    /// The on-disk cache uses this to refresh recency for keys that are hot in
-    /// the in-memory artifact cache and therefore never reach `get`/`has`,
-    /// keeping their files from being evicted while they're still in active
-    /// use. The default is a no-op; only [`FilesystemContractRuntimeCache`]
-    /// implements it.
-    fn note_access(&self, _key: &CryptoHash) {}
+    /// Notify the cache that `key` has been touched.
+    /// The default is a no-op; only [`FilesystemContractRuntimeCache`] implements it.
+    fn touch(&self, _key: &CryptoHash) {}
 
     /// TESTING ONLY: Clears the cache including in-memory and persistent data (if any).
     ///
@@ -175,8 +169,8 @@ impl ContractRuntimeCache for Box<dyn ContractRuntimeCache> {
         <dyn ContractRuntimeCache>::has(&**self, key)
     }
 
-    fn note_access(&self, key: &CryptoHash) {
-        <dyn ContractRuntimeCache>::note_access(&**self, key)
+    fn touch(&self, key: &CryptoHash) {
+        <dyn ContractRuntimeCache>::touch(&**self, key)
     }
 }
 
@@ -197,8 +191,8 @@ impl<C: ContractRuntimeCache> ContractRuntimeCache for &C {
         <C as ContractRuntimeCache>::has(self, key)
     }
 
-    fn note_access(&self, key: &CryptoHash) {
-        <C as ContractRuntimeCache>::note_access(self, key)
+    fn touch(&self, key: &CryptoHash) {
+        <C as ContractRuntimeCache>::touch(self, key)
     }
 }
 
@@ -281,12 +275,7 @@ struct FilesystemContractRuntimeCacheState {
     dir: rustix::fd::OwnedFd,
     any_cache: AnyCache,
     /// Tracks files present in `dir`, keyed by the same `CryptoHash` as the
-    /// on-disk filename, weighted by on-disk byte size. Touched on every
-    /// contract execution via [`ContractRuntimeCache::note_access`] as well as
-    /// on `get`/`has`/`put`, so eviction's least-recently-used victim reflects
-    /// actual usage even for entries served from the in-memory artifact
-    /// cache. Use [`UNBOUNDED_DISK_CACHE_BYTES`] as the limit when eviction
-    /// should be a no-op in practice.
+    /// on-disk filename, weighted by on-disk byte size.
     disk_index: Mutex<LruWeightedCache<CryptoHash, ()>>,
     test_temp_dir: Option<tempfile::TempDir>,
 }
@@ -321,10 +310,7 @@ impl FilesystemContractRuntimeCache {
     /// Note though, that this memory cache is *not* used to additionally cache files from the
     /// filesystem – OS page cache already does that for us transparently.
     ///
-    /// `max_disk_cache_bytes` is the maximum total size of compiled-contract
-    /// files kept on disk; files are evicted in approximate-LRU order as new
-    /// entries arrive. Pass [`UNBOUNDED_DISK_CACHE_BYTES`] when no effective
-    /// eviction is wanted (tests, the view-only `new` constructor).
+    /// `max_disk_cache_bytes` maximum total size of compiled-contract files kept on disk
     pub fn with_memory_cache<StorePath, ContractCachePath>(
         home_dir: &std::path::Path,
         store_path: Option<&StorePath>,
@@ -388,12 +374,6 @@ impl FilesystemContractRuntimeCache {
             "memcache_metrics_identifier is only supported with the `metrics` feature"
         );
 
-        // Skip the operator-facing atime-mode log when the limit is the
-        // "effectively unbounded" sentinel — quiets tests and `new()` callers
-        // who don't care about startup eviction ordering.
-        if max_disk_cache_bytes < UNBOUNDED_DISK_CACHE_BYTES {
-            note_atime_mode(&path);
-        }
         let disk_index = Mutex::new(build_disk_index(&dir, max_disk_cache_bytes)?);
 
         Ok(Self {
@@ -475,59 +455,6 @@ fn entry_disk_size(value: &CompiledContractInfo) -> u64 {
     value.compiled_size() + PUT_TRAILER_BYTES
 }
 
-/// Log which atime mode is in effect for the filesystem holding `path`, so
-/// operators can interpret the on-disk cache's startup eviction ordering:
-///
-/// - `strictatime` — every read bumps atime; ordering is exact recency.
-/// - `relatime` (kernel default) — atime is re-bumped at ~24h granularity,
-///   sufficient to distinguish cold from warm entries.
-/// - `noatime` — atime is frozen at write time, so ordering degrades to
-///   FIFO-by-compile-time.
-///
-/// Best-effort: silently does nothing on non-Linux, when
-/// `/proc/self/mountinfo` can't be read, or when no mount covers `path`.
-#[cfg(all(not(windows), target_os = "linux"))]
-fn note_atime_mode(path: &std::path::Path) {
-    let Ok(canonical) = std::fs::canonicalize(path) else { return };
-    let Ok(content) = std::fs::read_to_string("/proc/self/mountinfo") else { return };
-
-    // mountinfo line: id parent maj:min root mount_point mount_options ...
-    // We want field 5 (mount_point) and field 6 (mount_options).
-    let mut best: Option<(usize, String)> = None;
-    for line in content.lines() {
-        let mut parts = line.split_ascii_whitespace();
-        let (_, _, _, _) = (parts.next(), parts.next(), parts.next(), parts.next());
-        let Some(mount_point) = parts.next() else { continue };
-        let Some(mount_options) = parts.next() else { continue };
-        if canonical.starts_with(mount_point) {
-            let depth = mount_point.len();
-            if best.as_ref().map_or(true, |(d, _)| depth > *d) {
-                best = Some((depth, mount_options.to_owned()));
-            }
-        }
-    }
-
-    let Some((_, options)) = best else { return };
-    let mode = if options.split(',').any(|o| o == "noatime") {
-        "noatime"
-    } else if options.split(',').any(|o| o == "strictatime") {
-        "strictatime"
-    } else {
-        // `relatime` is the kernel default when neither of the other two is set.
-        "relatime"
-    };
-
-    tracing::info!(
-        target: "vm",
-        path = %canonical.display(),
-        atime_mode = mode,
-        "compiled-contract on-disk cache: atime mode determines startup eviction ordering"
-    );
-}
-
-#[cfg(all(not(windows), not(target_os = "linux")))]
-fn note_atime_mode(_path: &std::path::Path) {}
-
 /// Scan `dir` and build an [`LruWeightedCache`] tracking each on-disk
 /// cache file by its byte size, ordered from least- to most-recently-
 /// accessed (by `st_atime`, which the same `statat` call already returns).
@@ -547,7 +474,7 @@ fn note_atime_mode(_path: &std::path::Path) {}
 /// `atime` precision depends on the mount's atime mode (`strictatime`,
 /// `relatime`, `noatime`). Under `noatime`, `atime ≈ mtime` and ordering
 /// degrades to FIFO-by-compile-time — strictly no worse than ordering by
-/// mtime. See [`note_atime_mode`] for the operator-facing log.
+/// mtime.
 #[cfg(not(windows))]
 fn build_disk_index(
     dir: &rustix::fd::OwnedFd,
@@ -767,7 +694,7 @@ impl ContractRuntimeCache for FilesystemContractRuntimeCache {
             }
         };
         // Real cache hit: refresh recency so eviction doesn't drop it next.
-        self.note_access(key);
+        self.touch(key);
         Ok(Some(value))
     }
 
@@ -786,7 +713,7 @@ impl ContractRuntimeCache for FilesystemContractRuntimeCache {
             Ok(()) => {
                 // A probe reliably precedes use (e.g. `VM::contract_cached`),
                 // so treat it as an access for recency purposes.
-                self.note_access(key);
+                self.touch(key);
                 Ok(true)
             }
             Err(rustix::io::Errno::NOENT) => Ok(false),
@@ -794,7 +721,7 @@ impl ContractRuntimeCache for FilesystemContractRuntimeCache {
         }
     }
 
-    fn note_access(&self, key: &CryptoHash) {
+    fn touch(&self, key: &CryptoHash) {
         // `lru::LruCache::get` is mutating: looking up the key promotes it to
         // MRU. Result discarded — we only care about the side effect.
         let _ = self.state.disk_index.lock().get(key);
@@ -1559,7 +1486,7 @@ mod tests {
         // Five cold puts; `note_access(target)` before each promotes the
         // target back to MRU so the LRU drop falls on the oldest cold key.
         for i in 0..5 {
-            cache.note_access(&target);
+            cache.touch(&target);
             let cold = CryptoHash::hash_bytes(format!("cold{i}").as_bytes());
             cache.put(&cold, make_test_entry(0xBB)).unwrap();
         }
